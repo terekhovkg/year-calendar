@@ -143,7 +143,7 @@ class CalendarMonth {
   public clearActiveDays(): void {
     for (const day of this.days) {   
       day.active = day.highlighted = false;      
-      day.style = CalendarDayStyle.None;
+      day.style = day.holiday || day.weekend ? CalendarDayStyle.Holiday : CalendarDayStyle.None;
     }
   }
 
@@ -296,6 +296,9 @@ export default class YearCalendar extends Vue {
 
   private selectDay(day: CalendarDay): void {
     if (this.readonly || this.selectedDays === this.availableDays) {
+      return;
+    }
+    if (day.active && !this.periodSelectionStarted) {
       return;
     }
     if (this.periodSelectionStarted) {
