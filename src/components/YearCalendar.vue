@@ -19,7 +19,9 @@
                 <div class="month-title">
                   <div class="month-spacer"></div>
                   <div class="month-name">{{ month.name }}</div>
-                  <div class="days-count">{{ month.getActiveDays() }}</div>
+                  <div class="days-count">
+                    <div v-if="month.activeDays > 0">{{ month.formatActiveDays }}</div>
+                  </div>
                 </div>      
                 <div class="month-body">
                   <table>
@@ -55,12 +57,12 @@
       </table>      
     </div>
     <div class="periods">
-      <div 
+      <div
         v-for="(period, index) in periods" 
         :key="`period-${index}`"
         @mouseover="highlightPeriod(period)"
         @mouseout="highlightPeriod(period)"
-        class="period-item"
+        :class="periodClasses"
       >
         <div class="period-text">{{ formatPeriod(period) }}</div>
         <div v-if="!readonly" @click="deletePeriod(period, index)">
@@ -85,7 +87,6 @@ import CloseCircle from 'vue-material-design-icons/CloseCircle.vue';
 
 type Moment = Moment.Moment;
 const moment = extendMoment(Moment);
-const daysInWeek = 7;
 
 const enum CalendarDayStyle {
   None,
@@ -98,38 +99,24 @@ const enum CalendarDayStyle {
 }
 
 class LegendItem {
-  public readonly text: string;
-  public readonly style: string;
-
-  constructor(text: string, 
-              style: string) {
-    this.text = text;
-    this.style = style;
-  }
+  constructor(public readonly text: string, 
+              public readonly style: string) {}
 }
 
 class CalendarMonth {
-  public readonly days: CalendarDay[];
-  public readonly name: string;
-  public readonly weeks: number;
-  private emptyDays: number;
+  public static readonly daysInWeek: number = 7;
 
-  constructor(name: string, 
-              days: CalendarDay[], 
-              weeks: number,
-              emptyDays: number) {
-    this.days = days;
-    this.name = name;
-    this.weeks = weeks;
-    this.emptyDays = emptyDays;
-  }
+  constructor(public readonly name: string, 
+              public readonly days: CalendarDay[], 
+              public readonly weeks: number,
+              private readonly emptyDays: number) {}
 
   public getDay(date: number): CalendarDay {
     return this.days[this.emptyDays + date];
   }
 
-  public getActiveDays(): string {
-    const count = this.days.reduce<number>((total, item) => {
+  public get activeDays(): number {
+    return this.days.reduce<number>((total, item) => {
       if (item.active && 
           item.style !== CalendarDayStyle.ActiveHoliday && 
           item.style !== CalendarDayStyle.Recall) {
@@ -137,53 +124,29 @@ class CalendarMonth {
       }
       return total;
     }, 0);
-    return `${count} ${declOfNum(count, ['день', 'дня', 'дней'])}`;
   }
 
-  public clearActiveDays(): void {
-    for (const day of this.days) {   
-      day.active = day.highlighted = false;      
-      day.style = day.holiday || day.weekend ? CalendarDayStyle.Holiday : CalendarDayStyle.None;
-    }
-  }
+  public get formatActiveDays(): string {
+    return `${this.activeDays} ${declOfNum(this.activeDays, ['день', 'дня', 'дней'])}`;
+  }  
 
   public getWeekRow(week: number): CalendarDay[] {
-    return this.days.slice((week - 1) * daysInWeek, week * daysInWeek);
+    return this.days.slice(
+      (week - 1) * CalendarMonth.daysInWeek, 
+      week * CalendarMonth.daysInWeek
+    );
   }
 }
 
 class CalendarDay {
-  public active: boolean;
-  public holiday: boolean;
-  public weekend: boolean;
-  public disabled: boolean;
-  public highlighted: boolean;
-  public style: CalendarDayStyle;
-  public readonly date: Date; 
-  public readonly value: number;
-
-  constructor(value: number,
-              date: Date, 
-              style: CalendarDayStyle = CalendarDayStyle.None,
-              active: boolean = false,
-              holiday: boolean = false,
-              weelend: boolean = false,
-              disabled: boolean = false,
-              highlighted: boolean = false) {
-    this.active = active;
-    this.holiday = holiday;
-    this.weekend = weelend;
-    this.disabled = disabled;
-    this.highlighted = highlighted;
-    this.style = style;
-    this.value = value;
-    this.date = date;
-  }
-
-  public setStyle(style: CalendarDayStyle): void {
-    this.active = true;
-    this.style = style;
-  }
+  constructor(public readonly value: number,
+              public readonly date: Date, 
+              public style: CalendarDayStyle = CalendarDayStyle.None,
+              public active: boolean = false,
+              public holiday: boolean = false,
+              public weekend: boolean = false,
+              public disabled: boolean = false,
+              public highlighted: boolean = false) {}
 
   public classes(): string[] {    
     const classes = [];
@@ -195,6 +158,11 @@ class CalendarDay {
       classes.push('day--highlighted');
     }
     return classes;
+  }
+
+  public clearActiveDay(): void {      
+    this.active = this.highlighted = false;      
+    this.style = this.holiday || this.weekend ? CalendarDayStyle.Holiday : CalendarDayStyle.None;
   }
 
   private readonly styleToClass = new Map<CalendarDayStyle, string>([
@@ -267,7 +235,7 @@ export default class YearCalendar extends Vue {
       date.month(i);
       const firstDay = date.startOf('month').isoWeekday() - 1;      
       const lastDate = date.endOf('month').date()
-      const weeks = Math.ceil((lastDate + firstDay) / daysInWeek);
+      const weeks = Math.ceil((lastDate + firstDay) / CalendarMonth.daysInWeek);
       const days: CalendarDay[] = [];
       for (let j = 0; j < firstDay; ++j) {
         days.push(new CalendarDay(-1, new Date()));        
@@ -318,25 +286,28 @@ export default class YearCalendar extends Vue {
       day.style = !day.holiday ? CalendarDayStyle.Planned : CalendarDayStyle.ActiveHoliday;
       this.previousDate = day.date;
       this.periodSelectionStarted = true;
-      this.disableUnavailableDays(this.previousDate, this.availableDays - this.selectedDays);
+      this.disableUnavailableDays(this.previousDate, this.availableDays - this.selectedDays + 1);
     }
   }
 
   private get selectedDays(): number {
-    return this.plannedPeriods.reduce<number>((total, item) => {
-      const start = moment(item.start, this.dateFormat);
-      const end = moment(item.end, this.dateFormat);
-      return total + Math.abs(start.diff(end, 'days')) + 1;
-    }, 0);
+    return this.months.reduce<number>((total, item) => total += item.activeDays, 0);
   }  
+
+  private get periodClasses(): object {
+    return {
+      'period-item': true,
+      'period-item--disabled': this.periodSelectionStarted
+    }
+  }
 
   private deletePeriod(period: Period, index: number): void {
     const range = moment.range(
       moment(period.start, this.dateFormat),
       moment(period.end, this.dateFormat));
     for (const date of range.by('days')) {
-      const month = this.months[date.month()];
-      month.clearActiveDays();
+      const day = this.getCalendarDay(date);
+      day.clearActiveDay();
     }
     this.plannedPeriods.splice(index, 1);
   }
@@ -687,10 +658,16 @@ $blue-color-styleguide: rgb(0, 136, 187);
       color: #fff;
       border-radius: 20px;
       height: 32px;
-
+      
       &:hover {
         opacity: 0.8;
       }      
+    }
+
+    .period-item--disabled {
+      opacity: 0.38;
+      cursor: none;
+      pointer-events: none;
     }
 
     .period-text {
