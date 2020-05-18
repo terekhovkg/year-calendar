@@ -167,7 +167,7 @@ $blue-color-styleguide: rgb(0, 136, 187);
 }
 
 .day--highlighted {
-  transform: scale(1.1);
+  opacity: 0.8;
 }
 
 .day--schedule_used {

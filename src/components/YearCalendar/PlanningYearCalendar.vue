@@ -16,8 +16,8 @@
         <div
           v-for="(period, index) in plannedPeriods" 
           :key="`period-${index}`"
-          @mouseover="highlightPeriod(period)"
-          @mouseout="highlightPeriod(period)"
+          @mouseover="highlightPeriod(period, true)"
+          @mouseout="highlightPeriod(period, false)"
           :class="periodClasses"
         >
           <div class="period-text">{{ formatPeriod(period) }}</div>
@@ -69,14 +69,14 @@ export default class PlanningYearCalendar extends Mixins(YearCalendarMixins) {
     }
   }
 
-  private highlightPeriod(period: Period): void {
+  private highlightPeriod(period: Period, state: boolean): void {
     const range = moment.range(
       moment(period.start, this.dateFormat),
       moment(period.end, this.dateFormat)
     );    
     for (const date of range.by('days')) {
       const day = this.getCalendarDay(date)
-      day.highlighted = !day.highlighted;
+      day.highlighted = state;
     }
   }
 
@@ -117,7 +117,15 @@ export default class PlanningYearCalendar extends Mixins(YearCalendarMixins) {
   }
 
   private deletePeriod(period: Period, index: number): void {
-    this.setPeriod(period, false);
+    const range = moment.range(
+      moment(period.start, this.dateFormat),
+      moment(period.end, this.dateFormat)
+    );
+    for (const date of range.by('days')) {
+      const day = this.getCalendarDay(date);      
+      day.type = CalendarDayType.None;    
+      day.highlighted = false;  
+    }
     this.plannedPeriods.splice(index, 1);
   }
 
