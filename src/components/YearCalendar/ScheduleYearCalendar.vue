@@ -5,7 +5,8 @@
   >
     <template #day="{ item }">
       <div
-        :class="item.classes()"
+        class="day--disabled"
+        :class="dayClasses(item)"
       >
         {{ item.value }}
       </div>
@@ -18,7 +19,7 @@ import YearCalendar from './YearCalendar.vue';
 import { Component, Prop, Watch, Mixins } from 'vue-property-decorator';
 import moment from 'moment';
 import { VacationDate, VacationDateType } from '../../models/vacation';
-import { CalendarDayStyle } from './models';
+import { CalendarDayType } from './models';
 import { YearCalendarMixins } from './mixins';
 
 @Component({
@@ -29,39 +30,40 @@ import { YearCalendarMixins } from './mixins';
 export default class ScheduleYearCalendar extends Mixins(YearCalendarMixins) {  
   @Prop({ default: () => [] }) readonly vacationDates!: VacationDate[];
 
-  private setVacationDate(vacationDate: VacationDate, state: boolean): void {
-    const date = moment(vacationDate.date, this.dateFormat);
-    if (date.year() !== this.year) {
-      return;
-    }
-    const day = this.getCalendarDay(date)
-    day.active = state;
-    if (state) {
-      day.style = this.mapTypeToStyle(vacationDate.type);
-    } else {
-      day.style = CalendarDayStyle.None;
-    }    
+  private setVacationDate(vacationDates: VacationDate[], state: boolean): void {
+    for (const vacationDate of vacationDates) {
+      const date = moment(vacationDate.date, this.dateFormat);
+      if (date.year() !== this.year) {
+        return;
+      }
+      const day = this.getCalendarDay(date)
+      if (state) {
+        day.type = this.mapTypeToStyle(vacationDate.type);
+      } else {
+        day.type = CalendarDayType.None;
+      } 
+    }   
   } 
 
-  private mapTypeToStyle(type: VacationDateType): CalendarDayStyle {
+  private mapTypeToStyle(type: VacationDateType): CalendarDayType {
     switch (type) {
       case VacationDateType.Planned: {
-        return CalendarDayStyle.Planned;
+        return CalendarDayType.Planned;
       }
       case VacationDateType.ScheduleUsed: {
-        return CalendarDayStyle.ScheduleUsed;
+        return CalendarDayType.ScheduleUsed;
       }
       case VacationDateType.OffScheduleUsed: {
-        return CalendarDayStyle.OffScheduleUsed;
+        return CalendarDayType.OffScheduleUsed;
       }
       case VacationDateType.Recall: {
-        return CalendarDayStyle.Recall;
+        return CalendarDayType.Recall;
       }
       case VacationDateType.Holiday: {
-        return CalendarDayStyle.Holiday;
+        return CalendarDayType.Holiday;
       }
       default: {
-        return CalendarDayStyle.None
+        return CalendarDayType.None
       }
     }
   }
@@ -83,12 +85,15 @@ export default class ScheduleYearCalendar extends Mixins(YearCalendarMixins) {
 
   @Watch('vacationDates')
   private changeVacationDates(val: VacationDate[], oldVal: VacationDate[]): void {
-    for (const vacationDate of oldVal) {
-      this.setVacationDate(vacationDate, false);
-    }
-    for (const vacationDate of val) {
-      this.setVacationDate(vacationDate, true);
-    }
+    this.setVacationDate(oldVal, false);    
+    this.setVacationDate(val, true);  
+    this.calculateActiveDays();  
   }
 }
 </script>
+
+<style lang="scss" scoped>
+.day--disabled {
+  opacity: 1;
+}
+</style>

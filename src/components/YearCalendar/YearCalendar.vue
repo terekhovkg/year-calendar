@@ -13,14 +13,14 @@
     <div class="calendar">
       <table>
         <tbody>
-          <tr v-for="(num, index) in 3" :key="index">
-            <td v-for="(month, index) in getMonthRow(num)" :key="`month-${index}`">
+          <tr v-for="(row, index) in monthRows" :key="index">
+            <td v-for="(month, index) in getMonthRow(row)" :key="`month-${index}`">
               <div class="calendar-month">
                 <div class="month-title">
                   <div class="month-spacer"></div>
                   <div class="month-name">{{ month.name }}</div>
                   <div class="days-count">
-                    <div v-if="month.activeDays > 0">{{ month.formatActiveDays }}</div>
+                    <div v-if="month.activeDays > 0">{{ formatActiveDays(month) }}</div>
                   </div>
                 </div>      
                 <div class="month-body">
@@ -37,7 +37,7 @@
                     </thead>
                     <tbody>
                       <tr v-for="(week, index) in month.weeks" :key="`row-${index}`">
-                        <td v-for="(day, index) in month.getWeekRow(week)" :key="`day-${index}`">
+                        <td v-for="(day, index) in getWeekRow(month, week)" :key="`day-${index}`">
                           <slot v-if="day.value > 0" name="day" :item="day"></slot>
                         </td>
                       </tr>
@@ -57,13 +57,16 @@
 <script lang="ts">
 import Vue from 'vue';
 import { Component, Prop } from 'vue-property-decorator';
-import { LegendItem, CalendarMonth } from './models';
+import { LegendItem, CalendarMonth, CalendarDay } from './models';
+import { declOfNum } from '../../utils/common';
 
 @Component
 export default class YearCalendar extends Vue {
   @Prop({ default: false }) readonly showPeriods!: boolean;  
   @Prop({ required: true }) readonly months!: CalendarMonth[];
   
+  private readonly daysInWeek: number = 7;
+  private readonly monthRows: number = 3;
   private readonly monthsPerRow: number = 4;  
   private readonly daysTitles: string[] = [
     'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'
@@ -94,6 +97,17 @@ export default class YearCalendar extends Vue {
   private getMonthRow(row: number): CalendarMonth[] {
     return this.months.slice((row - 1) * this.monthsPerRow, row * this.monthsPerRow);
   }
+
+  private getWeekRow(month: CalendarMonth, week: number): CalendarDay[] {
+    return month.days.slice(
+      (week - 1) * this.daysInWeek, 
+      week * this.daysInWeek
+    );
+  }
+
+  private formatActiveDays(month: CalendarMonth): string {
+    return `${month.activeDays} ${declOfNum(month.activeDays, ['день', 'дня', 'дней'])}`;
+  } 
 }
 </script>
 

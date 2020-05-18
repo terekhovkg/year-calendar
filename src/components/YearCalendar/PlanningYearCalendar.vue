@@ -6,7 +6,7 @@
     <template #day="{ item }">
       <div
         @click="selectDay(item)"
-        :class="item.classes()"
+        :class="dayClasses(item)"
       >
         {{ item.value }}
       </div>
@@ -36,12 +36,12 @@ import { Component, Prop, Watch, Mixins } from 'vue-property-decorator';
 import YearCalendar from './YearCalendar.vue';
 import * as Moment from 'moment';
 import { extendMoment } from 'moment-range';
-import { CalendarDay, CalendarDayStyle } from './models';
+import { CalendarDay, CalendarDayType } from './models';
 import { YearCalendarMixins } from './mixins';
 import CloseCircle from 'vue-material-design-icons/CloseCircle.vue';
 
-type Moment = Moment.Moment;
 const moment = extendMoment(Moment);
+type Moment = Moment.Moment;
 
 @Component({
   components: {
@@ -54,7 +54,7 @@ export default class PlanningYearCalendar extends Mixins(YearCalendarMixins) {
   @Prop({ required: true }) readonly availableDays!: number;
   @Prop({ default: () => [] }) readonly periods!: Period[];
 
-  private previousDate!: Date
+  private previousDay!: CalendarDay
   private periodSelectionStarted: boolean = false;
   private plannedPeriods: Period[] = [];
 
@@ -80,19 +80,27 @@ export default class PlanningYearCalendar extends Mixins(YearCalendarMixins) {
     }
   }
 
+  private isSameHolidayDays(firstDay: CalendarDay, secondDay: CalendarDay): boolean {
+    if (firstDay.date === secondDay.date && firstDay.holiday && secondDay.holiday) {
+      return true;
+    }
+    return false;
+  }
+
   private selectDay(day: CalendarDay): void {
-    if (!this.periodSelectionStarted &&
-        (this.selectedDaysNumber === this.availableDays || day.active)) {
-      return;      
+    if (!this.periodSelectionStarted) {
+      if (this.selectedDaysNumber === this.availableDays || this.isDayActive(day)) return;      
+    } else {
+      if (this.isSameHolidayDays(this.previousDay, day)) return;      
     }
     const daysCount = this.availableDays - this.selectedDaysNumber;
     if (this.periodSelectionStarted) {
-      let startDate = this.previousDate;
+      let startDate = this.previousDay.date;
       let endDate = day.date;
       if (startDate > endDate) {
         [startDate, endDate] = [endDate, startDate];
       }
-      this.setDisabledDays(this.previousDate, daysCount, false);
+      this.setDisabledDays(this.previousDay.date, daysCount, false);
       const period = {
         start: moment(startDate).format(this.dateFormat),
         end: moment(endDate).format(this.dateFormat)
@@ -101,11 +109,10 @@ export default class PlanningYearCalendar extends Mixins(YearCalendarMixins) {
       this.plannedPeriods.push(period);
       this.periodSelectionStarted = false;
     } else {
-      day.active = true;
-      day.style = day.holiday ? CalendarDayStyle.Holiday : CalendarDayStyle.Planned;
-      this.previousDate = day.date;
+      this.previousDay = day;
       this.periodSelectionStarted = true;
-      this.setDisabledDays(this.previousDate, daysCount, true);
+      this.setDisabledDays(this.previousDay.date, daysCount, true);
+      day.type = day.holiday ? CalendarDayType.Holiday : CalendarDayType.Planned;
     }
   }
 
@@ -114,26 +121,40 @@ export default class PlanningYearCalendar extends Mixins(YearCalendarMixins) {
     this.plannedPeriods.splice(index, 1);
   }
 
-  private definePeriodStart(date: Date | Moment, count: number): Moment {
-    let start = moment(date, this.dateFormat).subtract(count, 'day');
-    const range = moment.range(start, date);
-    for (const date of range.by('days', { excludeEnd: true })) {
-      const day = this.getCalendarDay(date)
-      if (day.active) {
-        start = date;
-      }
+  private definePeriodStart(date: Date, count: number): Moment {
+    let start = moment(date, this.dateFormat) as Moment;
+    const range = moment().range(
+      moment().year(this.year).startOf('year'),
+      start
+    );
+    const days = range.reverseBy('days');
+    const daysIter = days[Symbol.iterator]();
+    let result: IteratorResult<Moment, Moment>;
+    while (!(result = daysIter.next()).done && count >= 0) {
+      start = result.value;
+      const day = this.getCalendarDay(start);
+      if (this.isDayActive(day) || day.disabled) break;
+      if (day.holiday) continue;
+      --count;
     }
     return start;
   }
 
-  private definePeriodEnd(date: Date | Moment, count: number): Moment {
-    let end = moment(date, this.dateFormat).add(count, 'day');
-    const range = moment.range(date, end);
-    for (const date of range.reverseBy('days', { excludeStart: true })) {
-      const day = this.getCalendarDay(date)
-      if (day.active) {
-        end = date;
-      }
+  private definePeriodEnd(date: Date, count: number): Moment {
+    let end = moment(date, this.dateFormat) as Moment;
+    const range = moment().range(
+      end,
+      moment().year(this.year).endOf('year')
+    );
+    const days = range.by('days');
+    const daysIter = days[Symbol.iterator]();
+    let result: IteratorResult<Moment, Moment>;
+    while (!(result = daysIter.next()).done && count >= 0) {
+      end = result.value;
+      const day = this.getCalendarDay(end);
+      if (this.isDayActive(day)) break;
+      if (day.holiday) continue;
+      --count;
     }
     return end;
   }
@@ -142,24 +163,24 @@ export default class PlanningYearCalendar extends Mixins(YearCalendarMixins) {
     return `${moment(period.start, this.dateFormat).format('DD.MM')} - ${moment(period.end, this.dateFormat).format('DD.MM')}`;
   }
 
-  private setDisabledDays(date: Date | Moment, count: number, state: boolean): void {
-    if (count < 0) {
-      return;
-    }
-    const start = this.definePeriodStart(date, count);
-    const end = this.definePeriodEnd(date, count);
-    const endOfYear = moment().year(this.year).endOf('year');
-    let startOfYear: Moment;
+  private setDisabledDays(date: Date, count: number, state: boolean): void {
+    let yearStart: Moment;
     if (this.workPeriodStart) {
-      startOfYear = moment(this.workPeriodStart, this.dateFormat);
+      yearStart = moment(this.workPeriodStart, this.dateFormat)
     } else {
-      startOfYear = moment().year(this.year).startOf('year');
+      yearStart = moment().year(this.year).startOf('year');
     }
+    const yearEnd = moment().year(this.year).endOf('year');
+    const periodStart = this.definePeriodStart(date, count);
+    const periodEnd = this.definePeriodEnd(date, count);
     const ranges = [
-      moment.range(startOfYear, start),
-      moment.range(end, endOfYear)
-    ]
+      moment.range(yearStart, periodStart),
+      moment.range(periodEnd, yearEnd)
+    ];
     for (const range of ranges) {
+      if (range.duration('days') === 0) {
+        continue;
+      }
       for (const date of range.by('days')) {
         const day = this.getCalendarDay(date)
         day.disabled = state;        
@@ -174,11 +195,10 @@ export default class PlanningYearCalendar extends Mixins(YearCalendarMixins) {
     );
     for (const date of range.by('days')) {
       const day = this.getCalendarDay(date);
-      day.active = state;
       if (state) {
-        day.style = day.holiday ? CalendarDayStyle.Holiday : CalendarDayStyle.Planned;
+        day.type = day.holiday ? CalendarDayType.Holiday : CalendarDayType.Planned;
       } else {
-        day.style = CalendarDayStyle.None;
+        day.type = CalendarDayType.None;
       }
     }    
   }
@@ -228,11 +248,12 @@ export default class PlanningYearCalendar extends Mixins(YearCalendarMixins) {
     for (const period of val) {
       this.setPeriod(period, true);
     }
-    this.plannedPeriods = [...val];
+    this.plannedPeriods = [...val];     
   }
 
   @Watch('plannedPeriods')
   private plannedPeriodsChange(): void {
+    this.calculateActiveDays();
     this.$emit('planned-periods', this.plannedPeriods);
   }
 }
